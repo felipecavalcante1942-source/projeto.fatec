@@ -65,6 +65,9 @@ c5.metric("Produtos", f"{products:,}".replace(",", "."))
 
 st.divider()
 
+st.subheader("📋 Dataset Filtrado")
+st.dataframe(filtered, use_container_width=True)
+
 col1, col2 = st.columns(2)
 
 with col1:

@@ -155,51 +155,56 @@ st.dataframe(summary.to_frame("Valor"), use_container_width=True)
 st.subheader("Amostra dos dados")
 st.dataframe(filtered.head(100), use_container_width=True)
 
-# --- MÓDULO DBSCAN (OTIMIZADO) ---
+# --- MÓDULO DBSCAN (CORRIGIDO) ---
 st.header("Agrupamento de Dados (DBSCAN)")
 
-# 1. Filtrar apenas colunas de comportamento de compra (ignorando IDs)
-colunas_comportamento = [c for c in ['item_count', 'price', 'order_score', 'total_amount'] if c in df.columns]
+# 1. Selecionar todas as colunas numéricas ignorando IDs (para garantir pelo menos 2 colunas)
+colunas_numericas = [c for c in df.select_dtypes(include=[np.number]).columns if 'id' not in c.lower()]
 
-# Caso não encontre essas colunas com os nomes exatos, pega as numéricas ignorando IDs
-if len(colunas_comportamento) < 2:
-    colunas_comportamento = [c for c in df.select_dtypes(include=[np.number]).columns if 'id' not in c.lower()]
+# Caso o filtro de IDs remova tudo, pega todas as numéricas
+if len(colunas_numericas) < 2:
+    colunas_numericas = list(df.select_dtypes(include=[np.number]).columns)
 
-X = df[colunas_comportamento].dropna()
+X = df[colunas_numericas].dropna()
 
 # 2. Padronização dos dados
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-# 3. DBSCAN com eps maior (1.2) e min_samples (15) para gerar menos clusters
+# 3. Executar DBSCAN com eps ajustado para poucos grupos
 dbscan = DBSCAN(eps=1.2, min_samples=15)
 df_clean = df.loc[X.index].copy()
 df_clean['Cluster'] = dbscan.fit_predict(X_scaled)
-
-# Mapear nome dos clusters para ficar legível
 df_clean['Cluster_Nome'] = df_clean['Cluster'].apply(lambda x: 'Ruído / Outlier' if x == -1 else f'Grupo {x}')
 
-# Exibição do gráfico do cotovelo lado a lado com métricas
+# Exibição do gráfico do cotovelo e resumo
 col_img, col_info = st.columns([1, 1])
 with col_img:
     st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
 with col_info:
     st.subheader("Resumo dos Agrupamentos")
     st.write(f"**Total de Clusters identificados:** {len(set(df_clean['Cluster'])) - (1 if -1 in df_clean['Cluster'] else 0)}")
-    st.write(f"**Atributos analisados:** {', '.join(colunas_comportamento)}")
+    st.write(f"**Atributos analisados:** {', '.join(colunas_numericas)}")
 
-# 4. Gráfico de dispersão limpo e customizado (Dark Theme combinando com o Streamlit)
-eixo_x = colunas_comportamento[0]
-eixo_y = colunas_comportamento[1]
+# 4. Definir Eixo X e Eixo Y sem estourar o índice
+if len(colunas_numericas) >= 2:
+    eixo_x = colunas_numericas[0]
+    eixo_y = colunas_numericas[1]
+else:
+    # Se só houver 1 coluna numérica, usa o próprio índice da tabela como X
+    eixo_x = df_clean.index.name or 'Índice'
+    df_clean[eixo_x] = df_clean.index
+    eixo_y = colunas_numericas[0]
 
+# 5. Gráfico de dispersão escuro e limpo
 fig = px.scatter(
     df_clean, 
     x=eixo_x, 
     y=eixo_y, 
     color='Cluster_Nome',
-    title=f"Distribuição de Clusters: {eixo_x.capitalize()} vs {eixo_y.capitalize()}",
+    title=f"Distribuição de Clusters: {str(eixo_x).capitalize()} vs {str(eixo_y).capitalize()}",
     color_discrete_sequence=px.colors.qualitative.Bold,
-    template='plotly_dark'  # Garante fundo escuro combinando com a interface
+    template='plotly_dark'
 )
 
 fig.update_traces(marker=dict(size=7, opacity=0.8, line=dict(width=0.5, color='DarkSlateGrey')))

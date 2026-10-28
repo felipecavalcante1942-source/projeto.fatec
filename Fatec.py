@@ -155,33 +155,57 @@ st.dataframe(summary.to_frame("Valor"), use_container_width=True)
 st.subheader("Amostra dos dados")
 st.dataframe(filtered.head(100), use_container_width=True)
 
-# --- MÓDULO DBSCAN ---
+# --- MÓDULO DBSCAN (OTIMIZADO) ---
 st.header("Agrupamento de Dados (DBSCAN)")
 
-# Processamento dos dados
-X = df.select_dtypes(include=[np.number]).dropna()
+# 1. Filtrar apenas colunas de comportamento de compra (ignorando IDs)
+colunas_comportamento = [c for c in ['item_count', 'price', 'order_score', 'total_amount'] if c in df.columns]
+
+# Caso não encontre essas colunas com os nomes exatos, pega as numéricas ignorando IDs
+if len(colunas_comportamento) < 2:
+    colunas_comportamento = [c for c in df.select_dtypes(include=[np.number]).columns if 'id' not in c.lower()]
+
+X = df[colunas_comportamento].dropna()
+
+# 2. Padronização dos dados
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-# Aplicação do algoritmo
-dbscan = DBSCAN(eps=0.5, min_samples=4)
-df['Cluster'] = dbscan.fit_predict(X_scaled)
-df['Cluster'] = df['Cluster'].astype(str)
+# 3. DBSCAN com eps maior (1.2) e min_samples (15) para gerar menos clusters
+dbscan = DBSCAN(eps=1.2, min_samples=15)
+df_clean = df.loc[X.index].copy()
+df_clean['Cluster'] = dbscan.fit_predict(X_scaled)
 
-# Exibição da imagem do cotovelo gerada no Colab
-st.subheader("Método do Cotovelo para DBSCAN")
-st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot para escolha do eps")
+# Mapear nome dos clusters para ficar legível
+df_clean['Cluster_Nome'] = df_clean['Cluster'].apply(lambda x: 'Ruído / Outlier' if x == -1 else f'Grupo {x}')
 
-# Gráfico interativo com Plotly
-col1, col2 = X.columns[0], X.columns[1]
+# Exibição do gráfico do cotovelo lado a lado com métricas
+col_img, col_info = st.columns([1, 1])
+with col_img:
+    st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
+with col_info:
+    st.subheader("Resumo dos Agrupamentos")
+    st.write(f"**Total de Clusters identificados:** {len(set(df_clean['Cluster'])) - (1 if -1 in df_clean['Cluster'] else 0)}")
+    st.write(f"**Atributos analisados:** {', '.join(colunas_comportamento)}")
+
+# 4. Gráfico de dispersão limpo e customizado (Dark Theme combinando com o Streamlit)
+eixo_x = colunas_comportamento[0]
+eixo_y = colunas_comportamento[1]
+
 fig = px.scatter(
-    df, 
-    x=col1, 
-    y=col2, 
-    color='Cluster',
-    title="Clusters Identificados pelo DBSCAN",
-    labels={'Cluster': 'Agrupamento (-1 = Ruído)'},
-    template='plotly_white'
+    df_clean, 
+    x=eixo_x, 
+    y=eixo_y, 
+    color='Cluster_Nome',
+    title=f"Distribuição de Clusters: {eixo_x.capitalize()} vs {eixo_y.capitalize()}",
+    color_discrete_sequence=px.colors.qualitative.Bold,
+    template='plotly_dark'  # Garante fundo escuro combinando com a interface
+)
+
+fig.update_traces(marker=dict(size=7, opacity=0.8, line=dict(width=0.5, color='DarkSlateGrey')))
+fig.update_layout(
+    legend_title_text='Agrupamentos',
+    margin=dict(l=20, r=20, t=50, b=20)
 )
 
 st.plotly_chart(fig, use_container_width=True)

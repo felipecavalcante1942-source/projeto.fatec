@@ -156,43 +156,56 @@ st.subheader("Amostra dos dados")
 st.dataframe(filtered.head(100), use_container_width=True)
 
 # --- MÓDULO DBSCAN ---
+st.divider()
 st.header("Agrupamento de Dados (DBSCAN)")
 
-# 1. Obter colunas numéricas sem erros
-colunas_num = list(df.select_dtypes(include=[np.number]).columns)
+try:
+    # Agrupar por cliente para criar métricas de comportamento reais
+    cluster_df = filtered.groupby("customer_id").agg(
+        total_itens=("basket_count", "sum"),
+        total_pedidos=("basket_count", "count")
+    ).reset_index()
 
-if len(colunas_num) >= 2:
-    X = df[colunas_num].dropna()
+    X = cluster_df[["total_itens", "total_pedidos"]]
 
-    # 2. Normalização
+    # Normalização dos dados
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # 3. Execução do DBSCAN
-    dbscan = DBSCAN(eps=1.2, min_samples=15)
-    df_clean = df.loc[X.index].copy()
-    df_clean['Cluster'] = dbscan.fit_predict(X_scaled)
-    df_clean['Cluster_Nome'] = df_clean['Cluster'].apply(lambda x: 'Ruído / Outlier' if x == -1 else f'Grupo {x}')
-
-    # Layout de exibição
-    col_img, col_info = st.columns([1, 1])
-    with col_img:
-        st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
-    with col_info:
-        st.subheader("Resumo dos Agrupamentos")
-        st.write(f"**Total de Clusters:** {len(set(df_clean['Cluster'])) - (1 if -1 in df_clean['Cluster'] else 0)}")
-
-    # 4. Gráfico interativo
-    fig = px.scatter(
-        df_clean, 
-        x=colunas_num[0], 
-        y=colunas_num[1], 
-        color='Cluster_Nome',
-        title=f"Distribuição de Clusters: {colunas_num[0]} vs {colunas_num[1]}",
-        template='plotly_dark'
+    # Execução do DBSCAN
+    dbscan = DBSCAN(eps=0.8, min_samples=5)
+    cluster_df["Cluster"] = dbscan.fit_predict(X_scaled)
+    cluster_df["Agrupamento"] = cluster_df["Cluster"].apply(
+        lambda x: "Outliers / Ruído" if x == -1 else f"Grupo {x}"
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("O conjunto de dados precisa de pelo menos 2 colunas numéricas para gerar o gráfico de agrupamento.")
+    col_img, col_info = st.columns([1, 1])
 
+    with col_img:
+        try:
+            st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
+        except Exception:
+            st.info("Imagem 'grafico_cotovelo_dbscan.png' não encontrada na pasta raiz.")
+
+    with col_info:
+        st.subheader("Resumo dos Agrupamentos")
+        num_clusters = len(set(cluster_df["Cluster"])) - (1 if -1 in cluster_df["Cluster"] else 0)
+        st.write(f"**Total de Clusters identificados:** {num_clusters}")
+        st.write("**Métricas analisadas:** Total de Itens Comprados vs. Frequência de Pedidos por Cliente")
+
+    # Gráfico de dispersão limpo
+    fig_dbscan = px.scatter(
+        cluster_df,
+        x="total_pedidos",
+        y="total_itens",
+        color="Agrupamento",
+        title="Perfil dos Clientes: Total de Pedidos vs Total de Itens",
+        labels={"total_pedidos": "Total de Pedidos", "total_itens": "Total de Itens Comprados"},
+        template="plotly_dark",
+        color_discrete_sequence=px.colors.qualitative.Set1
+    )
+
+    st.plotly_chart(fig_dbscan, use_container_width=True)
+
+except Exception as e:
+    st.error(f"Erro ao processar o agrupamento DBSCAN: {e}")

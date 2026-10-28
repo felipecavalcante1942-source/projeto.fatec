@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
 
 st.set_page_config(page_title="E-Commerce Sales Dashboard", page_icon="📊", layout="wide")
 
@@ -152,3 +154,34 @@ st.dataframe(summary.to_frame("Valor"), use_container_width=True)
 
 st.subheader("Amostra dos dados")
 st.dataframe(filtered.head(100), use_container_width=True)
+
+# --- MÓDULO DBSCAN ---
+st.header("Agrupamento de Dados (DBSCAN)")
+
+# Processamento dos dados
+X = df.select_dtypes(include=[np.number]).dropna()
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Aplicação do algoritmo
+dbscan = DBSCAN(eps=0.5, min_samples=4)
+df['Cluster'] = dbscan.fit_predict(X_scaled)
+df['Cluster'] = df['Cluster'].astype(str)
+
+# Exibição da imagem do cotovelo gerada no Colab
+st.subheader("Método do Cotovelo para DBSCAN")
+st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot para escolha do eps")
+
+# Gráfico interativo com Plotly
+col1, col2 = X.columns[0], X.columns[1]
+fig = px.scatter(
+    df, 
+    x=col1, 
+    y=col2, 
+    color='Cluster',
+    title="Clusters Identificados pelo DBSCAN",
+    labels={'Cluster': 'Agrupamento (-1 = Ruído)'},
+    template='plotly_white'
+)
+
+st.plotly_chart(fig, use_container_width=True)

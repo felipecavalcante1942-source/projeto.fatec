@@ -155,62 +155,44 @@ st.dataframe(summary.to_frame("Valor"), use_container_width=True)
 st.subheader("Amostra dos dados")
 st.dataframe(filtered.head(100), use_container_width=True)
 
-# --- MÓDULO DBSCAN (CORRIGIDO) ---
+# --- MÓDULO DBSCAN ---
 st.header("Agrupamento de Dados (DBSCAN)")
 
-# 1. Selecionar todas as colunas numéricas ignorando IDs (para garantir pelo menos 2 colunas)
-colunas_numericas = [c for c in df.select_dtypes(include=[np.number]).columns if 'id' not in c.lower()]
+# 1. Obter colunas numéricas sem erros
+colunas_num = list(df.select_dtypes(include=[np.number]).columns)
 
-# Caso o filtro de IDs remova tudo, pega todas as numéricas
-if len(colunas_numericas) < 2:
-    colunas_numericas = list(df.select_dtypes(include=[np.number]).columns)
+if len(colunas_num) >= 2:
+    X = df[colunas_num].dropna()
 
-X = df[colunas_numericas].dropna()
+    # 2. Normalização
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-# 2. Padronização dos dados
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+    # 3. Execução do DBSCAN
+    dbscan = DBSCAN(eps=1.2, min_samples=15)
+    df_clean = df.loc[X.index].copy()
+    df_clean['Cluster'] = dbscan.fit_predict(X_scaled)
+    df_clean['Cluster_Nome'] = df_clean['Cluster'].apply(lambda x: 'Ruído / Outlier' if x == -1 else f'Grupo {x}')
 
-# 3. Executar DBSCAN com eps ajustado para poucos grupos
-dbscan = DBSCAN(eps=1.2, min_samples=15)
-df_clean = df.loc[X.index].copy()
-df_clean['Cluster'] = dbscan.fit_predict(X_scaled)
-df_clean['Cluster_Nome'] = df_clean['Cluster'].apply(lambda x: 'Ruído / Outlier' if x == -1 else f'Grupo {x}')
+    # Layout de exibição
+    col_img, col_info = st.columns([1, 1])
+    with col_img:
+        st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
+    with col_info:
+        st.subheader("Resumo dos Agrupamentos")
+        st.write(f"**Total de Clusters:** {len(set(df_clean['Cluster'])) - (1 if -1 in df_clean['Cluster'] else 0)}")
 
-# Exibição do gráfico do cotovelo e resumo
-col_img, col_info = st.columns([1, 1])
-with col_img:
-    st.image("grafico_cotovelo_dbscan.png", caption="K-Distance Plot (Escolha do eps)")
-with col_info:
-    st.subheader("Resumo dos Agrupamentos")
-    st.write(f"**Total de Clusters identificados:** {len(set(df_clean['Cluster'])) - (1 if -1 in df_clean['Cluster'] else 0)}")
-    st.write(f"**Atributos analisados:** {', '.join(colunas_numericas)}")
+    # 4. Gráfico interativo
+    fig = px.scatter(
+        df_clean, 
+        x=colunas_num[0], 
+        y=colunas_num[1], 
+        color='Cluster_Nome',
+        title=f"Distribuição de Clusters: {colunas_num[0]} vs {colunas_num[1]}",
+        template='plotly_dark'
+    )
 
-# 4. Definir Eixo X e Eixo Y sem estourar o índice
-if len(colunas_numericas) >= 2:
-    eixo_x = colunas_numericas[0]
-    eixo_y = colunas_numericas[1]
+    st.plotly_chart(fig, use_container_width=True)
 else:
-    # Se só houver 1 coluna numérica, usa o próprio índice da tabela como X
-    eixo_x = df_clean.index.name or 'Índice'
-    df_clean[eixo_x] = df_clean.index
-    eixo_y = colunas_numericas[0]
+    st.warning("O conjunto de dados precisa de pelo menos 2 colunas numéricas para gerar o gráfico de agrupamento.")
 
-# 5. Gráfico de dispersão escuro e limpo
-fig = px.scatter(
-    df_clean, 
-    x=eixo_x, 
-    y=eixo_y, 
-    color='Cluster_Nome',
-    title=f"Distribuição de Clusters: {str(eixo_x).capitalize()} vs {str(eixo_y).capitalize()}",
-    color_discrete_sequence=px.colors.qualitative.Bold,
-    template='plotly_dark'
-)
-
-fig.update_traces(marker=dict(size=7, opacity=0.8, line=dict(width=0.5, color='DarkSlateGrey')))
-fig.update_layout(
-    legend_title_text='Agrupamentos',
-    margin=dict(l=20, r=20, t=50, b=20)
-)
-
-st.plotly_chart(fig, use_container_width=True)
